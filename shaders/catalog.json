@@ -1,0 +1,15 @@
+[
+  {"id":"color","name":"Color","parameters":{"brightness":[-1,1,0],"contrast":[0,2,1],"saturation":[0,2,1],"temperature":[-1,1,0],"tint":[-1,1,0],"exposure":[-2,2,0]}},
+  {"id":"grayscale","name":"Monochrome","parameters":{}},
+  {"id":"vignette","name":"Vignette","parameters":{"amount":[0,1,0.6]}},
+  {"id":"grain","name":"Film grain","parameters":{"amount":[0,0.3,0.08]}},
+  {"id":"blur","name":"Blur","parameters":{"radius":[0,12,4]}},
+  {"id":"glow","name":"Glow","parameters":{"amount":[0,1,0.4],"radius":[0,12,4]}},
+  {"id":"sharpen","name":"Sharpen","parameters":{"amount":[0,2,0.5]}},
+  {"id":"chromatic","name":"Chromatic aberration","parameters":{"amount":[0,12,3]}},
+  {"id":"distortion","name":"Lens distortion","parameters":{"amount":[-0.5,0.5,0.15]}},
+  {"id":"glitch","name":"Glitch","parameters":{"amount":[0,0.2,0.04],"speed":[0,3,1]}},
+  {"id":"lightLeak","name":"Light leak","parameters":{"amount":[0,1,0.3],"speed":[0,3,0.5]}},
+  {"id":"pulse","name":"Color pulse","parameters":{"amount":[0,0.3,0.1],"speed":[0,3,1]}},
+  {"id":"lut","name":"Color grade LUT","parameters":{"preset":[0,3,0]}}
+]

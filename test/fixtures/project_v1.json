@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "legacy", "width": 1080, "height": 1920, "frameRate": 29.97,
+    "videoClips": [{"id": "video", "sourcePath": "media/original.mp4"}],
+    "audioClips": [],
+    "textOverlays": [{"id": "title", "text": "Legacy title"}],
+    "stickerOverlays": [],
+    "tracks": [{"id": "main", "kind": "video", "clips": [{
+      "id": "clip", "mediaId": "video", "sourceDurationUs": 10000000,
+      "sourceInUs": 1000000, "sourceOutUs": 9000000, "timelineStartUs": 2000000,
+      "speedNumerator": 2, "speedDenominator": 1, "volume": 0.5
+    }]}]
+  }
+}

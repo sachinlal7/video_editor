@@ -1,0 +1,988 @@
+Build a VN Video Editor–like Flutter Package: Complete Roadmap
+Sachin, the right approach is to build a reusable Flutter video-editing SDK/package, not just a video-editor app. Your package should let any Flutter app integrate a VN-style editor with a timeline, trimming, transitions, filters, effects, stickers, text, audio, and high-quality video export.
+One important point: we can aim for similar editing capabilities and a comparable user experience to VN, but matching VN exactly in performance, effects, and every feature requires substantial engineering, testing, and potentially licensed assets. VN's proprietary source code and effect library are not something we can assume are publicly available.
+1. The architecture you should build
+Host Flutter Application
+Your app integrates the editor package
+
+
+Your Flutter Editor Package
+Editor UI
+Preview, timeline, tools, controls
+
+
+Editing Engine
+Clips, tracks, effects, project state
+
+
+Effects Engine
+Filters, shaders, stickers, text
+
+
+Export Manager
+Encoding, audio, progress, output
+
+
+
+
+
+Native Media Layer
+Android
+Kotlin, MediaCodec, GPU rendering
+
+
+iOS
+Swift, AVFoundation, Metal
+
+
+
+
+Shared processing options: FFmpeg where appropriately licensed, plus native or GPU-based rendering.
+
+
+The key design principle is that Flutter controls the editing experience, while the media engine handles time-critical playback, compositing, effects, and rendering. Not every operation needs native code, but the expensive rendering path should not rely on repeatedly rebuilding Flutter widgets.
+2. What belongs where?
+Feature	Recommended implementation
+Editor screens, buttons, tool panels	Flutter
+Timeline UI, clip selection, gestures	Flutter
+Project state and undo/redo	Dart, with BLoC or another state solution
+Video playback and seeking	Native player or a proven player integration
+Frame-accurate preview and compositing	Native rendering engine
+Real-time filters and visual effects	GPU shaders
+Stickers, text, overlays	Flutter for controls; rendering engine for final compositing
+Audio tracks, volume, fades	Editing model + native audio/video pipeline
+Video thumbnails and waveform generation	Native/background processing
+Final encoding and export	Native encoders, FFmpeg, or a hybrid pipeline
+Android/iOS integration	Pigeon-generated APIs or carefully designed platform interfaces
+Draft persistence and recovery	Dart project model + local file storage
+Do not use FFmpeg as your only preview engine. Running a new FFmpeg command every time someone moves a slider or seeks the timeline would usually be too slow for a smooth editing experience.
+
+
+
+
+3. Recommended technology stack
+Use this stack as the initial baseline. You can replace individual components later without rewriting the public package API.
+
+
+
+
+
+
+
+
+
+Flutter + Dart
+Editor UI, timeline, gestures, editing models, tool panels, project serialization, and SDK API.
+
+
+
+
+
+
+
+
+
+
+
+
+Kotlin + Android Media3
+Android playback, media metadata, export pipeline, supported effects, and platform integration.
+Official Android editing guide 
+
+Android Developers
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Swift + AVFoundation + Metal
+iOS playback, composition, export, and custom GPU rendering when standard effects are insufficient.
+Apple custom video compositor documentation 
+
+Apple Developer Documentation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GPU shader rendering
+Real-time color grading, LUTs, vignettes, blur, glow, and custom visual effects. Use a renderer designed to process actual video frames.
+Flutter fragment shader documentation 
+
+Flutter Docs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FFmpeg, optionally
+Transcoding, media conversion, audio filters, and processing that fits your chosen build. Use a maintained integration or build and maintain your own native bindings.
+Important: FFmpegKit was retired, so don't base a new production SDK on its old package without evaluating maintenance and binary availability. 
+
+GitHub
+
+
+
+
+
+
+A critical distinction about shaders
+Flutter's FragmentProgram can draw GPU effects on Flutter canvas content, but it does not automatically give you a GPU pipeline for processing decoded video frames.
+For the actual video preview, you need to connect the decoded video frames to a rendering pipeline that can apply effects. On Android, that may use a native GPU surface and OpenGL ES or another suitable GPU API. On iOS, use Metal or AVFoundation's composition pipeline. The exact renderer should be selected early because it affects preview, effects, and export compatibility.
+
+4. Phase-wise implementation plan
+The order below is important. You should create the reusable package first, then implement the editing engine incrementally.
+Development roadmap
+Use this checklist to track your implementation.
+0 of 11 phases complete
+Reset
+
+
+[ ] Phase 0 — SDK foundation
+Package structure, supported platforms, API design and licenses.
+
+
+[ ] Phase 1 — Project and timeline engine
+Clips, tracks, timestamps, trim, split, undo/redo.
+
+
+[ ] Phase 2 — Native video playback
+Video decoding, seek, frame timing, audio sync.
+
+
+[ ] Phase 3 — Timeline UI
+Clip blocks, thumbnails, playhead, dragging and zoom.
+
+
+[ ] Phase 4 — GPU effects and filters
+Live filters, effect parameters, shader registry and preview.
+
+
+[ ] Phase 5 — Stickers and text
+Images, emojis, animated overlays, text and keyframes.
+
+
+[ ] Phase 6 — Audio editor
+Music, voiceovers, volume, fades and synchronization.
+
+
+[ ] Phase 7 — Transitions and advanced editing
+Clip transitions, speed curves, crop, rotate, picture-in-picture.
+
+
+[ ] Phase 8 — Export engine
+Native rendering, encoding, audio mixing, progress and cancellation.
+
+
+[ ] Phase 9 — Production optimization
+Memory, caching, device compatibility, crash recovery and testing.
+
+
+[ ] Phase 10 — Package release
+Documentation, example app, semantic versioning and publishing.
+
+
+
+Phase 0 — Create the Flutter SDK package
+Goal: Any Flutter application should be able to add your package and open the editor without copying your implementation into its own codebase.
+Step 0.1 — Create a federated-style package structure
+For a plugin that contains Dart code and custom native Android/iOS implementations, start with a plugin package:
+flutter create --template=plugin \
+  --platforms=android,ios \
+  --org com.yourcompany \
+  vn_editor
+
+
+Then create a separate example application:
+cd vn_editor
+flutter create example
+
+
+A recommended repository layout:
+vn_editor/
+├── lib/
+│   ├── vn_editor.dart
+│   └── src/
+│       ├── api/
+│       ├── controller/
+│       ├── models/
+│       ├── timeline/
+│       ├── preview/
+│       ├── effects/
+│       ├── stickers/
+│       ├── audio/
+│       ├── export/
+│       └── persistence/
+├── android/
+│   └── src/main/kotlin/
+│       └── .../vn_editor/
+│           ├── VnEditorPlugin.kt
+│           ├── playback/
+│           ├── renderer/
+│           └── export/
+├── ios/
+│   └── Classes/
+│       ├── VnEditorPlugin.swift
+│       ├── Playback/
+│       ├── Renderer/
+│       └── Export/
+├── shaders/
+├── assets/
+│   ├── filters/
+│   ├── stickers/
+│   ├── fonts/
+│   └── lut/
+├── test/
+├── integration_test/
+├── example/
+└── pubspec.yaml
+
+
+You can split this into multiple internal packages later, such as a pure-Dart timeline core and a native media plugin. Initially, keeping one public package with clean internal boundaries is simpler.
+Step 0.2 — Define your public API before building screens
+The host app should have a simple integration surface.
+For example, the API could look like this:
+import 'package:flutter/material.dart';
+import 'package:vn_editor/vn_editor.dart';
+
+final project = EditorProject.empty(
+  width: 1080,
+  height: 1920,
+  frameRate: 30,
+);
+
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => VnEditor(
+      project: project,
+      onExportComplete: (result) {
+        debugPrint(result.path);
+      },
+    ),
+  ),
+);
+
+
+This is the proposed API, not code that works until you implement those classes.
+Expose a small number of stable public concepts:
+- VnEditor — editor screen/widget.
+- EditorController — play, pause, seek, edit and export commands.
+- EditorProject — complete editable project.
+- VideoClip, AudioClip, TextOverlay, StickerOverlay — editing objects.
+- EditorFilter, EditorEffect — visual adjustments.
+- EditorExportSettings — resolution, frame rate, quality and output.
+- EditorExportResult — path, duration and export metadata.
+Keep native implementation classes private. Don't expose Kotlin or Swift types to the host app.
+Step 0.3 — Choose the platform bridge
+Use Pigeon for type-safe communication between Dart and Kotlin/Swift. It generates platform-interface code and avoids relying on manually matching method-channel strings. 
+
+GitHub
+
+
+
+Create two categories of communication:
+1. Commands: open media, seek, apply effect, start export, cancel export.
+2. Events: playback state, export progress, errors, media metadata.
+Do not send video frames or large image buffers through platform channels on every frame. Keep those inside the native rendering pipeline.
+Step 0.4 — Define package constraints and licenses
+- Set a minimum Flutter/Dart SDK version you can test.
+- Declare Android and iOS platform requirements.
+- Check the licenses for FFmpeg, codecs, fonts, stickers, LUTs and other bundled assets.
+- Test your package from the example application, not only from its own directory.
+
+Phase 1 — Build the editing engine and project model
+Goal: Every editing operation is represented as data, not as a direct change to the preview widget.
+Step 1.1 — Build the project data model
+The model should support:
+- Project dimensions and frame rate.
+- Video, image, audio and overlay tracks.
+- Clip source path and source trim range.
+- Timeline start position and duration.
+- Clip transforms, volume and speed.
+- Effects, filters and transitions.
+- Stickers, text and animated properties.
+- Undo/redo history.
+Use integer or rational time units internally where practical. Avoid accumulating floating-point seconds for frame-sensitive operations.
+For example, at 30 fps, frame 90 corresponds to 3 seconds. The engine should map timeline positions to source timestamps explicitly.
+Step 1.2 — Separate source time from timeline time
+A video clip needs at least these concepts:
+- sourceIn: where playback begins in the original media.
+- sourceOut: where playback ends in the original media.
+- timelineStart: where the clip appears in the edited video.
+- speed: playback rate.
+- duration: resulting timeline duration.
+For a constant-speed clip:
+\[
+\text{duration}=\frac{\text{sourceOut}-\text{sourceIn}}{\text{speed}}
+\]
+
+A clip played at 2× speed occupies half its original trimmed duration. Speed curves require a more sophisticated mapping.
+Step 1.3 — Implement editing commands
+Start with commands such as:
+abstract interface class EditorCommand {
+  void apply(EditorProject project);
+  void undo(EditorProject project);
+}
+
+
+Implement:
+1. Add and remove a clip.
+2. Move a clip on the timeline.
+3. Trim its start and end.
+4. Split a clip at the playhead.
+5. Change volume and playback speed.
+6. Add and remove a track.
+7. Apply and remove a filter.
+8. Add, move and resize an overlay.
+9. Undo and redo each operation.
+The exact interface may evolve, but every command should have predictable undo behavior.
+Step 1.4 — Add project persistence
+Save a serializable project document containing media references and editing settings. Keep the original video files separate from the project file.
+Example structure:
+{
+  "schemaVersion": 1,
+  "project": {
+    "width": 1080,
+    "height": 1920,
+    "frameRate": 30
+  },
+  "tracks": [],
+  "assets": [],
+  "overlays": [],
+  "exportSettings": {}
+}
+
+
+Use relative asset references where possible and a migration mechanism for future schema changes.
+Phase 1 is complete when you can load a project, edit its timeline, undo changes, save it, close the app, and reopen it without losing the editing state.
+
+Phase 2 — Native video playback and preview
+Goal: Smooth playback and seeking without freezing the Flutter UI.
+Step 2.1 — Implement the playback abstraction
+Create a Dart interface such as:
+abstract interface class EditorPlayback {
+  Future<void> load(String path);
+  Future<void> play();
+  Future<void> pause();
+  Future<void> seek(Duration position);
+  Future<void> dispose();
+}
+
+
+Your native implementation should handle video decoding, playback timestamps, buffering and resource release.
+Start with one video clip before implementing a multi-clip preview.
+Step 2.2 — Android implementation
+Use Kotlin and Android's media APIs. Media3 is a reasonable starting point for playback and supported editing/export effects.
+- Open the media file.
+- Read its duration, dimensions, frame rate and audio tracks.
+- Render video into a native surface.
+- Synchronize the playhead with the media presentation timestamp.
+- Support play, pause and seek.
+- Handle seeking, buffering, decoder errors and device rotation.
+For advanced multi-clip rendering and custom filters, you may need a custom GPU pipeline beyond Media3's built-in effects.
+Step 2.3 — iOS implementation
+Use Swift and AVFoundation.
+- Load an AVAsset.
+- Inspect its video and audio tracks.
+- Play and seek with AVPlayer.
+- Use AVMutableComposition for assembling clips.
+- Use AVVideoComposition for supported composition and transformations.
+- Add a custom compositor when the required effects need custom frame processing. 
+  
+  Apple Developer Documentation
+  +1
+Step 2.4 — Synchronize Flutter with native playback
+Native playback should be the source of truth for actual media time. Flutter can request a seek or playback action, but shouldn't assume the requested position has been reached until the native layer reports it.
+Send state updates at a reasonable cadence. Don't send a Dart event on every decoded video frame.
+Phase 2 is complete when a long video plays, pauses and seeks reliably, and both platforms report consistent timeline positions.
+
+Phase 3 — Build the timeline UI
+Goal: Create the familiar video-editor workspace.
+
+
+
+
+
+
+
+
+
+Timeline
+Clips, audio tracks, playhead, zoom and trim handles.
+
+
+
+
+
+
+
+
+
+
+Preview and tools
+Video canvas, filter selection, overlays and editing controls.
+
+
+These are visual references for common editor layouts, not screenshots of VN's exact implementation.
+Step 3.1 — Implement the timeline ruler and playhead
+- Draw time markers.
+- Map timeline time to horizontal pixels.
+- Implement horizontal scrolling and zoom.
+- Keep the playhead aligned with the preview.
+- Allow seeking by tapping or dragging.
+- Support auto-scroll during playback.
+Use a custom painter for the ruler and playhead. Avoid rebuilding hundreds of individual widgets for every timeline tick.
+Step 3.2 — Implement clip blocks
+Each clip block should support:
+- Thumbnail strip.
+- Clip name or media icon.
+- Selected state.
+- Left and right trim handles.
+- Drag-to-move.
+- Split at playhead.
+- Delete and duplicate.
+- Audio waveform, if applicable.
+For trimming, calculate the time from the gesture position, clamp it to valid bounds, and update the model. Keep the preview synchronized with the committed timeline position.
+Step 3.3 — Generate thumbnails asynchronously
+Generate thumbnail images in the background using native media APIs or an appropriate media utility.
+- Cache thumbnails on disk.
+- Generate only visible thumbnails plus a small buffer.
+- Cancel work for clips that have left the visible region.
+- Use lower-resolution thumbnails for the timeline.
+- Generate higher-resolution frames only when required.
+Step 3.4 — Use BLoC carefully
+Since the UI state can be complex, BLoC is suitable for editing commands, tool selections, project changes and export status.
+However, do not emit a whole new editor state for every decoded video frame. Keep high-frequency playback timing separate from the heavier project state.
+Phase 3 is complete when you can manipulate multiple clips on the timeline and the preview follows the playhead correctly.
+
+
+
+
+
+Phase 4 — Build the GPU filter and effects engine
+Goal: Apply filters and visual effects in real time, with a matching result during export.
+This is one of the most technically demanding parts of the entire package.
+Step 4.1 — Design a filter registry
+A filter should be data-driven rather than hard-coded into individual buttons.
+For example:
+class EditorFilter {
+  final String id;
+  final String name;
+  final String shaderId;
+  final Map<String, double> parameters;
+  final double intensity;
+
+  const EditorFilter({
+    required this.id,
+    required this.name,
+    required this.shaderId,
+    this.parameters = const {},
+    this.intensity = 1.0,
+  });
+}
+
+
+Each filter has a unique identifier, display name, parameters and intensity. The native renderer resolves the shader or processing implementation associated with that identifier.
+Build the registry around these categories:
+
+
+
+
+
+
+
+
+
+Color filters
+Warm, cool, vintage, monochrome, cinematic, contrast, saturation and exposure.
+
+
+
+
+
+
+
+
+
+
+
+
+Visual effects
+Film grain, vignette, blur, glow, sharpen, chromatic aberration and selected distortion effects.
+
+
+
+
+
+
+
+
+
+
+
+
+Animated effects
+Glitch, shake, pulse, flicker, light leaks and animated color changes.
+
+
+
+
+
+
+
+
+
+
+
+
+Compositing effects
+Light leaks, image overlays, blending, masks and picture-in-picture.
+
+
+
+Step 4.2 — Implement basic color filters
+Start with inexpensive per-pixel operations:
+1. Brightness.
+2. Contrast.
+3. Saturation.
+4. Temperature and tint.
+5. Grayscale.
+6. Vignette.
+7. LUT-based color grading.
+For color grading, a 3D LUT is a useful way to represent complex color transformations. You can author your own LUTs or use properly licensed ones.
+Step 4.3 — Connect the GPU renderer
+On Android, create a native rendering pipeline that receives decoded frames as GPU textures or another efficient GPU-compatible representation. On iOS, use a Metal-based pipeline or AVFoundation's supported composition mechanisms.
+A typical rendering chain is:
+Decoded video frame
+Crop, rotate and scale
+Color filter / LUT
+Effects and masks
+Text, stickers and overlays
+Composited preview frame
+
+
+The preview and export renderers should share the same effect definitions and parameter semantics. Otherwise, a filter can look different in the preview and the exported video.
+Step 4.4 — Understand where Flutter shaders fit
+Flutter supports runtime fragment shaders written in GLSL. You can register shader files in pubspec.yaml and load them using FragmentProgram. 
+
+Flutter Docs
+
+
+
+For example, a grayscale shader can calculate luminance from the red, green and blue channels. However, applying it to a Flutter canvas image is different from applying it to each frame of a playing video.
+Use Flutter shaders for UI-side effects and suitable canvas content. Use your native video renderer for the actual video frame pipeline.
+Step 4.5 — Implement effect intensity
+Every effect should expose a normalized intensity value, usually between 0 and 1.
+For a simple effect, interpolate between the original and processed result:
+\[
+C_{\text{out}}=(1-t)C_{\text{original}}+tC_{\text{effect}}
+\]
+
+Here, \(t\) is the intensity. More complex effects need effect-specific blending, but the same user-facing intensity control can still be provided.
+Step 4.6 — Build an effect catalogue
+Don't begin by trying to create 100 effects. First make 8–12 high-quality effects work reliably, including:
+- Color grading.
+- Vignette.
+- Film grain.
+- Blur.
+- Glow.
+- Glitch.
+- Light leak.
+- Basic distortion.
+- A transition effect.
+- An animated effect.
+Then expand the catalogue once the renderer is stable.
+Phase 4 is complete when the user can scrub and play the video with filters enabled, adjust effect parameters, and get a matching result in export.
+
+Phase 5 — Stickers, text and animated overlays
+Goal: Support stickers and text as independently editable timeline layers.
+Step 5.1 — Create a unified overlay model
+Use one common model for the properties shared by text and stickers:
+class EditorOverlay {
+  final String id;
+  final String assetId;
+  final int startFrame;
+  final int endFrame;
+  final double x;
+  final double y;
+  final double scale;
+  final double rotation;
+  final double opacity;
+
+  const EditorOverlay({
+    required this.id,
+    required this.assetId,
+    required this.startFrame,
+    required this.endFrame,
+    this.x = 0.5,
+    this.y = 0.5,
+    this.scale = 1.0,
+    this.rotation = 0,
+    this.opacity = 1.0,
+  });
+}
+
+
+This is an initial model; text-specific properties, animation curves, anchor points and blend modes should be added through typed submodels.
+Step 5.2 — Implement the sticker library
+Support:
+- PNG and WebP stickers with transparency.
+- Emoji stickers.
+- Imported images.
+- Sticker categories and search.
+- Bundled and downloadable sticker packs.
+- Animated stickers, such as frame-based animations or a supported animation format.
+Store stickers as assets with stable IDs. Don't embed large binary image data directly in the project JSON.
+Step 5.3 — Build the editing interactions
+In the Flutter preview, let users:
+- Drag a sticker to move it.
+- Pinch to scale it.
+- Rotate it with two-finger gestures.
+- Change opacity.
+- Set its start and end time.
+- Duplicate or delete it.
+Flutter handles the interaction and updates the overlay model. The renderer draws the final overlay into the video frame.
+Step 5.4 — Add text editing
+Build controls for:
+- Font family and weight.
+- Font size.
+- Color and gradient.
+- Outline and shadow.
+- Background and padding.
+- Alignment and line spacing.
+- Text animation.
+- Text position and duration.
+For final export, render text using the same fonts and layout rules as preview. Make sure bundled fonts have redistribution rights.
+Step 5.5 — Add keyframe animation
+To support VN-style animated stickers and text, store properties at timeline positions:
+- Position.
+- Scale.
+- Rotation.
+- Opacity.
+- Effect intensity.
+Interpolate these properties at each output frame. Start with linear interpolation, then add easing curves such as ease-in, ease-out and cubic Bézier.
+Phase 5 is complete when stickers and text can be positioned, animated, moved on the timeline and composited into the exported video.
+
+Phase 6 — Audio editing
+Goal: Mix video audio, music and voiceovers on a shared timeline.
+Implement the following in order:
+1. Extract audio metadata and duration.
+2. Add music and voiceover tracks.
+3. Trim and move audio clips.
+4. Control volume and mute.
+5. Add fade-in and fade-out.
+6. Generate waveform thumbnails.
+7. Support audio extraction from video.
+8. Add multiple audio tracks.
+9. Synchronize audio and video during seeking and playback.
+10. Mix all active audio tracks during export.
+The project model should store audio source ranges and timeline positions just like video clips. Audio processing should use a native audio pipeline or a suitable media-processing library.
+For a professional editor, also plan for audio sample-rate conversion, channel layouts, clipping prevention and precise audio/video synchronization.
+
+Phase 7 — Transitions and advanced editing
+Goal: Go beyond a simple clip editor.
+Implement these features after the core playback, timeline and effects pipelines are stable.
+Feature	Required engineering
+Crossfade and fade to black	Opacity interpolation and composition
+Wipe and slide transitions	Two-frame compositing and animated masks
+Speed adjustment	Source-time mapping and audio handling
+Speed ramp	Time remapping curves and careful frame scheduling
+Crop and rotate	Transform pipeline
+Picture-in-picture	Multiple simultaneous video layers
+Chroma key	Color keying, masks and compositing
+Blur background	Additional render passes
+Reverse playback	Frame access or preprocessing strategy
+Freeze frame	Frame extraction and timeline duration
+Keyframe editor	Timeline animation model and interpolation
+Templates	Reusable project structures and assets
+For transitions, the engine must render both clips during the transition interval. Simply placing two clips next to each other is not enough.
+For speed ramps and reverse playback, test audio behavior, variable-frame-rate sources and frame accuracy early. These features can expose limitations in a simplistic rendering pipeline.
+
+
+
+
+
+Phase 8 — Build the export engine
+Goal: Export the edited project as a video with all clips, filters, effects, stickers, text and audio correctly applied.
+Export should be treated as a separate engine, not as a screenshot or screen recording of the preview.
+Step 8.1 — Define export settings
+Your SDK should expose a configuration similar to this:
+class EditorExportSettings {
+  final int width;
+  final int height;
+  final int frameRate;
+  final int videoBitrate;
+  final String videoCodec;
+  final String container;
+
+  const EditorExportSettings({
+    this.width = 1080,
+    this.height = 1920,
+    this.frameRate = 30,
+    this.videoBitrate = 12000000,
+    this.videoCodec = 'h264',
+    this.container = 'mp4',
+  });
+}
+
+
+This is a proposed model, not a complete export implementation. Validate supported codec, resolution, bitrate and container combinations against the target device.
+Step 8.2 — Convert the project into a render plan
+Before exporting, compile the editing model into an immutable render plan containing:
+- Source media and clip time ranges.
+- Timeline ordering.
+- Video and audio tracks.
+- Frame rate and output dimensions.
+- Transformations and transitions.
+- Filter parameters and effect timing.
+- Text and sticker layers.
+- Audio mixing instructions.
+- Output codec and quality settings.
+Validate every source file and parameter before starting the export.
+Step 8.3 — Implement platform export
+Android export
+- Use Media3 Transformer for supported editing, effects and export operations.
+- Use MediaCodec and a custom GPU pipeline where advanced rendering requires it.
+- Use a compatible audio pipeline for mixing and encoding.
+- Check codec capabilities and supported resolutions on the actual device.
+Reference: Android's video editing guide. 
+
+Android Developers
+
+
+
+
+iOS export
+- Use AVMutableComposition to assemble compatible media tracks.
+- Use AVVideoComposition for supported transformations and compositing.
+- Use AVAssetExportSession for supported export workflows.
+- Use a custom AVVideoCompositing implementation for effects that require a custom frame renderer.
+Reference: Apple's video compositing API. 
+
+Apple Developer Documentation
+
+
+
+
+Step 8.4 — Decide where FFmpeg fits
+FFmpeg can be useful for transcoding, audio filters, format conversion and certain offline effects. It should not automatically be the only engine for the entire editor.
+There are three possible approaches:
+Approach	Advantages	Trade-offs
+Native export	Better integration with platform media APIs	Separate Android and iOS implementations
+FFmpeg-based export	Extensive media-processing functionality	Native binary distribution, licensing and integration complexity
+Hybrid export	Native rendering plus FFmpeg for selected operations	More engineering and validation
+My recommendation: start with native export for common operations, while designing an abstraction that allows an FFmpeg backend when needed.
+Be particularly careful with FFmpeg licensing. Your obligations depend on the precise version, configuration, enabled libraries and how you distribute the binaries. Review the relevant licenses before shipping a commercial package.
+Step 8.5 — Add export progress and cancellation
+The public SDK should expose a stream of progress events and a cancellation command.
+abstract interface class EditorExporter {
+  Stream<ExportProgress> get progress;
+
+  Future<EditorExportResult> export(
+    EditorProject project,
+    EditorExportSettings settings,
+  );
+
+  Future<void> cancel();
+}
+
+
+Implement the progress model and exporter behind this interface.
+The export process should:
+1. Validate the project.
+2. Prepare media and output files.
+3. Initialize the rendering pipeline.
+4. Render and encode frames.
+5. Mix and encode audio.
+6. Finalize the output container.
+7. Verify that the output is readable.
+8. Return the result or a structured error.
+Cancellation should clean up temporary files and release native resources.
+Phase 8 is complete when a project can be exported, cancelled and retried, with correct duration, audio synchronization and all supported visual layers.
+
+Phase 9 — Performance optimization
+You said the editor should not make the app slow. This needs to be an architectural requirement from the beginning, not a final optimization task.
+Step 9.1 — Keep expensive work off the UI thread
+- Decode media on native processing threads.
+- Render effects through the GPU or an optimized native pipeline.
+- Generate thumbnails and waveforms asynchronously.
+- Keep file I/O and export work off the Flutter UI isolate.
+- Avoid sending full-resolution frames through Dart for each preview update.
+Step 9.2 — Use smart caching
+Implement separate caches for:
+- Media metadata.
+- Timeline thumbnails.
+- Audio waveforms.
+- Filter previews.
+- Decoded image stickers.
+- Fonts and shader programs.
+Set explicit memory budgets and eviction rules. Cache entries should be invalidated when the source media or relevant settings change.
+Step 9.3 — Render previews at adaptive resolution
+The preview doesn't always need to render at the final export resolution.
+For example, a 1080 × 1920 video contains over 2 million pixels per frame. A preview rendered at 540 × 960 contains one-quarter as many pixels.
+Use lower-resolution rendering while scrubbing or dragging a filter slider, then increase preview quality when playback stabilizes. Final export must use the selected output quality.
+Step 9.4 — Avoid unnecessary effect processing
+- Compile shaders once and reuse them.
+- Reuse GPU textures and buffers where possible.
+- Avoid allocating large temporary images for each frame.
+- Use efficient thumbnail virtualization.
+- Debounce expensive operations triggered by sliders.
+- Cancel obsolete thumbnail and preview work.
+- Avoid unnecessary Dart/native round trips.
+Step 9.5 — Handle memory and thermal limits
+A production editor must handle long videos and low-memory devices.
+- Release decoders and surfaces when switching projects.
+- Limit simultaneous decoded frames.
+- Use appropriate texture sizes and image formats.
+- Avoid retaining full-resolution frames for every timeline clip.
+- Monitor dropped frames and memory usage.
+- Provide a lower-quality preview mode on weaker devices.
+No architecture can guarantee zero lag on every phone. Your goal should be predictable performance, graceful quality reduction and no avoidable UI blocking.
+Step 9.6 — Establish performance targets
+Use measurable targets instead of relying on the feeling that the editor is fast.
+Metric	Initial target
+Timeline UI	Aim for 60 FPS on your reference device
+Common editing commands	Responsive without visible UI blocking
+Preview seeking	Consistent and recoverable after rapid scrubbing
+Export	Runs independently of UI responsiveness
+Memory	Bounded and tested with long clips
+Resource cleanup	No accumulating decoders, surfaces or GPU resources
+Treat these as engineering targets to validate, not guaranteed results.
+
+Phase 10 — Testing, packaging and publishing
+Step 10.1 — Test the editing engine
+Write unit tests for:
+- Trim and split calculations.
+- Source-to-timeline time mapping.
+- Speed and duration calculations.
+- Effect parameter validation.
+- Undo/redo.
+- Project serialization and migrations.
+- Export-plan generation.
+Step 10.2 — Test real media files
+Include test videos covering:
+- Portrait and landscape orientation.
+- Different frame rates.
+- Variable-frame-rate videos.
+- Videos with and without audio.
+- Long and short clips.
+- Large resolutions.
+- Corrupt and unsupported media.
+- Multiple clips with transitions.
+- Stickers, text, filters and audio overlays.
+Compare preview frames and exported frames for representative timestamps.
+Step 10.3 — Test across devices
+Use physical Android and iOS devices, including lower-end hardware. Simulators and emulators are useful for UI testing but do not replace real-device media performance tests.
+Also test:
+- App backgrounding during export.
+- Interruptions and storage errors.
+- Low memory.
+- Insufficient storage.
+- Export cancellation.
+- App termination and project recovery.
+- Permission denial and inaccessible source files.
+Step 10.4 — Publish the Flutter package
+Your package should contain:
+- A documented public API.
+- An example app.
+- Setup and platform requirements.
+- Supported codec and effect documentation.
+- License notices.
+- Unit and integration tests.
+- A changelog and semantic versioning.
+- A migration policy for project formats.
+Publish a private package first, if needed. Move to pub.dev when the API, licenses, and platform behavior are stable.
+
+5. How to organize the code internally
+I recommend separating your SDK into these conceptual modules, even if they initially live in one repository.
+vn_editor
+Public API and editor UI
+
+
+vn_editor_core
+Timeline models, commands, serialization
+
+
+vn_editor_media
+Playback, thumbnails, media metadata
+
+
+vn_editor_renderer
+GPU preview, compositing and effects
+
+
+vn_editor_export
+Render plan, encoding and export
+
+
+vn_editor_assets
+Filter definitions, sticker packs, fonts and LUTs
+
+
+
+The first version can keep these as folders. Split them into separately versioned packages only when the interfaces are stable and there is a real reuse benefit.
+6. Define a shared renderer contract
+This is particularly important if you want Android and iOS to produce consistent results.
+Represent each visual effect with a platform-independent definition:
+class EffectDefinition {
+  final String id;
+  final String version;
+  final Map<String, double> parameters;
+  final int startFrame;
+  final int endFrame;
+
+  const EffectDefinition({
+    required this.id,
+    required this.version,
+    required this.parameters,
+    required this.startFrame,
+    required this.endFrame,
+  });
+}
+
+
+The Dart layer defines the effect's meaning and timeline. Each native renderer maps that definition to its implementation.
+For example, brightness should have the same parameter range and intended behavior on both platforms, even if the underlying shader code differs.
+Build a capability registry too. It should report which effects, transitions, codecs and export features are supported on the current device. That allows your editor to disable unsupported options instead of failing unexpectedly.
+7. What I would implement first
+Don't attempt all the phases at once. The highest-risk technical work is the media renderer, not the editor toolbar.
+1. Foundation: Create the plugin, example app, project model and public API.
+2. Playback proof of concept: Play, pause and seek a native video through Flutter.
+3. Timeline: Implement trim, split, multiple clips, thumbnails and undo/redo.
+4. Rendering proof of concept: Apply one GPU filter to an actual decoded video frame, then confirm the exported frame matches.
+5. Overlays: Implement one image sticker and one text layer with positioning and timing.
+6. Export: Produce a correct MP4 with video, audio, filter and overlay compositing.
+7. Expansion: Add transitions, audio editing, animation, advanced effects and a larger asset catalogue.
+The most important milestone is Step 4: a real video frame passes through your renderer, gets filtered, and exports correctly on both Android and iOS. Prove that before investing heavily in a large filter library.
+A full VN-class editor is a substantial product, so treat this as a phased SDK project rather than a single Flutter feature. Your reusable package should hide the native complexity from the app developer while retaining the flexibility needed to grow the rendering engine.
